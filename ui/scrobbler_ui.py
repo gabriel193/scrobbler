@@ -1,11 +1,11 @@
 # scrobbler_ui.py
 
-from PyQt5 import QtCore, QtGui, QtWidgets, QtWebEngineWidgets
+from PyQt5 import QtCore, QtGui, QtWidgets
 
 class Ui_MainWindow(object):
     def setupUi(self, MainWindow):
         MainWindow.setObjectName("MainWindow")
-        MainWindow.resize(300, 500)  # Ajuste no tamanho para acomodar os novos campos
+        MainWindow.resize(300, 300)  # Ajuste no tamanho para acomodar os novos campos
         MainWindow.setStyleSheet("""
             QWidget {
                 background-color: #f0f0f0;
@@ -156,15 +156,25 @@ class Ui_MainWindow(object):
         self.progressBar.setValue(0)
         self.main_layout.addWidget(self.progressBar)
 
-        # Botões de Pausar e Cancelar
+        # Layout horizontal para a imagem do usuário e o statusLabel
+        status_layout = QtWidgets.QHBoxLayout()
+        status_layout.setSpacing(5)
+
+        # Criar o userImageLabel
+        self.userImageLabel = QtWidgets.QLabel()
+        self.userImageLabel.setFixedSize(32, 32)
+        self.userImageLabel.setVisible(False)
+        status_layout.addWidget(self.userImageLabel, 0)  # Stretch fator 0 para a imagem
+
+        # Botões de Pausar e Cancelar em um layout horizontal
         control_buttons_layout = QtWidgets.QHBoxLayout()
         control_buttons_layout.setSpacing(5)
         self.pauseButton = QtWidgets.QPushButton("Pausar")
         self.pauseButton.setFixedHeight(30)
-        self.pauseButton.setVisible(False)
+        self.pauseButton.setVisible(False)  # Inicialmente oculto
         self.cancelButton = QtWidgets.QPushButton("Cancelar")
         self.cancelButton.setFixedHeight(30)
-        self.cancelButton.setVisible(False)
+        self.cancelButton.setVisible(False)  # Inicialmente oculto
         control_buttons_layout.addWidget(self.pauseButton)
         control_buttons_layout.addWidget(self.cancelButton)
         self.main_layout.addLayout(control_buttons_layout)
@@ -174,7 +184,9 @@ class Ui_MainWindow(object):
         self.statusLabel.setAlignment(QtCore.Qt.AlignLeft | QtCore.Qt.AlignVCenter)
         self.statusLabel.setWordWrap(True)
         self.statusLabel.setStyleSheet("font-weight: bold; color: #333333;font-size: 10px;")
-        self.main_layout.addWidget(self.statusLabel)
+        status_layout.addWidget(self.statusLabel, 1)  # Stretch fator 1 para o texto
+
+        self.main_layout.addLayout(status_layout)
 
         MainWindow.setCentralWidget(self.centralwidget)
         self.retranslateUi(MainWindow)

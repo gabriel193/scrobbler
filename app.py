@@ -149,7 +149,7 @@ class ScrobblerApp(QtWidgets.QMainWindow):
 
     def update_interface(self):
         if self.is_authenticated:
-            self.setFixedSize(300, 400)  # Ajuste o tamanho conforme necessário
+            self.setFixedSize(300, 230)  # Ajuste o tamanho conforme necessário
             self.ui.usernameLabel.setVisible(False)
             self.ui.usernameInput.setVisible(False)
             self.ui.passwordLabel.setVisible(False)
@@ -168,7 +168,7 @@ class ScrobblerApp(QtWidgets.QMainWindow):
             self.ui.quantityInput.setEnabled(True)
             self.ui.scrobbleButton.setEnabled(True)
         else:
-            self.setFixedSize(300, 500)  # Ajuste no tamanho para acomodar os campos de login
+            self.setFixedSize(300, 380)  # Ajuste no tamanho para acomodar os campos de login
             self.ui.usernameLabel.setVisible(True)
             self.ui.usernameInput.setVisible(True)
             self.ui.passwordLabel.setVisible(True)
