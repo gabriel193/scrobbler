@@ -8,7 +8,7 @@ from ui.scrobbler_ui import Ui_MainWindow
 from PyQt5.QtGui import QPixmap, QPainter, QPainterPath
 import urllib.request
 
-from utils import (
+from utils.utils import (
     save_credentials,
     load_credentials,
     remove_credentials,
