@@ -17,7 +17,7 @@ from utils.utils import (
 
 from threads.threads import ScrobbleThread, ScrobbleThreadAlbum
 from services.services import LastFMService
-from app.updates import UpdateChecker, UpdateDownloader
+from updates import UpdateChecker, UpdateDownloader
 
 class ScrobblerApp(QtWidgets.QMainWindow):
     def __init__(self):
