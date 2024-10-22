@@ -1,10 +1,13 @@
 # utils.py
 
+import json
 import os
 import sys
 import subprocess
 import requests
 
+CREDENTIALS_FILE = "credentials.json"
+SCROBBLE_LIMIT = 3000
 GITHUB_REPO = "gabriel193/scrobbler"
 
 def check_for_updates():
@@ -33,3 +36,24 @@ def update_application():
         subprocess.run(["git", "pull"])
     else:
         subprocess.run(["git", "clone", f"https://github.com/{GITHUB_REPO}.git", "."])
+
+def save_credentials(username, password_hash, api_key, api_secret):
+    credentials = {
+        "username": username,
+        "password_hash": password_hash,
+        "api_key": api_key,
+        "api_secret": api_secret
+    }
+    with open(CREDENTIALS_FILE, 'w') as f:
+        json.dump(credentials, f)
+
+def load_credentials():
+    if os.path.exists(CREDENTIALS_FILE):
+        with open(CREDENTIALS_FILE, 'r') as f:
+            credentials = json.load(f)
+            return credentials
+    return None
+
+def remove_credentials():
+    if os.path.exists(CREDENTIALS_FILE):
+        os.remove(CREDENTIALS_FILE)
