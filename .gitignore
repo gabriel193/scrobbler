@@ -3,3 +3,6 @@
 ./ui/__pycache__
 credentials.json
 __pycache__
+main.spec
+build
+dist
