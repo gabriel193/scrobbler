@@ -2,6 +2,7 @@
 
 import sys
 import os
+import threading
 import pylast
 from PyQt5 import QtWidgets, QtGui, QtCore
 from ui.scrobbler_ui import Ui_MainWindow
@@ -9,19 +10,21 @@ from PyQt5.QtGui import QPixmap, QPainter, QPainterPath
 import urllib.request
 
 from utils import (
-    autenticar,
-    verificar_artista_musica,
     save_credentials,
     load_credentials,
     remove_credentials,
-    SCROBBLE_LIMIT
+    SCROBBLE_LIMIT,
+    check_for_updates,
+    update_application,
 )
+
 from threads import ScrobbleThread, ScrobbleThreadAlbum
 
-class ScrobblerApp(QtWidgets.QMainWindow, Ui_MainWindow):
+class ScrobblerApp(QtWidgets.QMainWindow):
     def __init__(self):
         super().__init__()
-        self.setupUi(self)
+        self.ui = Ui_MainWindow()
+        self.ui.setupUi(self)
 
         # Obter o caminho base
         if getattr(sys, 'frozen', False):
@@ -30,25 +33,25 @@ class ScrobblerApp(QtWidgets.QMainWindow, Ui_MainWindow):
             base_path = os.path.abspath(".")
         icon_path = os.path.join(base_path, "resources", "app.ico")
         self.setWindowIcon(QtGui.QIcon(icon_path))
-        self.setFixedSize(300, 320)
+        self.setFixedSize(300, 500)  # Ajuste no tamanho para acomodar os novos campos
         self.network = None
         self.is_authenticated = False
 
         # Inicializa campos e botões
-        self.artistInput.setEnabled(False)
-        self.songInput.setEnabled(False)
-        self.quantityInput.setEnabled(False)
-        self.scrobbleButton.setEnabled(False)
-        self.modeToggle.setEnabled(False)
+        self.ui.artistInput.setEnabled(False)
+        self.ui.songInput.setEnabled(False)
+        self.ui.quantityInput.setEnabled(False)
+        self.ui.scrobbleButton.setEnabled(False)
+        self.ui.modeToggle.setEnabled(False)
 
-        self.loginButton.clicked.connect(self.autenticar_usuario)
-        self.scrobbleButton.clicked.connect(self.iniciar_scrobble)
-        self.pauseButton.clicked.connect(self.pausar_ou_resumir_scrobble)
-        self.cancelButton.clicked.connect(self.cancelar_scrobble)
+        self.ui.loginButton.clicked.connect(self.autenticar_usuario)
+        self.ui.scrobbleButton.clicked.connect(self.iniciar_scrobble)
+        self.ui.pauseButton.clicked.connect(self.pausar_ou_resumir_scrobble)
+        self.ui.cancelButton.clicked.connect(self.cancelar_scrobble)
 
         # Modo padrão (False para scrobble por faixa)
         self.scrobble_by_album = False
-        self.modeToggle.clicked.connect(self.toggle_scrobble_mode)
+        self.ui.modeToggle.clicked.connect(self.toggle_scrobble_mode)
 
         # Carrega credenciais salvas
         self.load_credentials()
@@ -56,24 +59,53 @@ class ScrobblerApp(QtWidgets.QMainWindow, Ui_MainWindow):
         # Atualiza a interface
         self.update_interface()
 
+        # Verificar atualizações em segundo plano
+        threading.Thread(target=self.check_for_updates, daemon=True).start()
+
     def load_credentials(self):
-        username, password_hash = load_credentials()
-        if username and password_hash:
-            self.usernameInput.setText(username)
-            self.passwordInput.setText('')
-            self.network = autenticar(username, password_hash)
+        credentials = load_credentials()
+        if credentials:
+            username = credentials.get('username')
+            password_hash = credentials.get('password_hash')
+            api_key = credentials.get('api_key')
+            api_secret = credentials.get('api_secret')
+
+            self.ui.usernameInput.setText(username)
+            self.ui.passwordInput.setText('')
+            self.ui.apiKeyInput.setText(api_key)
+            self.ui.apiSecretInput.setText(api_secret)
+
+            self.network = self.autenticar(username, password_hash, api_key, api_secret)
             if self.network:
                 self.is_authenticated = True
-                self.statusLabel.setText(f"<b>Vai scrobblar hoje, chefe?</b>")
-                self.loginButton.setEnabled(False)
+                self.ui.statusLabel.setText(f"<b>Vai scrobblar hoje, chefe?</b>")
+                self.ui.loginButton.setEnabled(False)
                 self.load_user_image()
                 self.update_interface()
             else:
-                self.statusLabel.setText("<b>Falha na autenticação automática. Por favor, faça login novamente.</b>")
+                self.ui.statusLabel.setText("<b>Falha na autenticação automática. Por favor, faça login novamente.</b>")
                 self.is_authenticated = False
                 remove_credentials()
         else:
-            self.statusLabel.setText("Por favor, faça login.")
+            self.ui.statusLabel.setText("Por favor, faça login.")
+
+    def autenticar(self, username, password_hash, api_key, api_secret):
+        try:
+            network = pylast.LastFMNetwork(
+                api_key=api_key,
+                api_secret=api_secret,
+                username=username,
+                password_hash=password_hash
+            )
+            # Verificar se o login foi bem-sucedido
+            user = network.get_authenticated_user()
+            return network
+        except pylast.WSError as e:
+            self.ui.statusLabel.setText(f"Erro de autenticação: {e}")
+            return None
+        except Exception as e:
+            self.ui.statusLabel.setText(f"Ocorreu um erro: {e}")
+            return None
 
     def load_user_image(self):
         user = self.network.get_authenticated_user()
@@ -98,158 +130,129 @@ class ScrobblerApp(QtWidgets.QMainWindow, Ui_MainWindow):
                 painter.drawPixmap(0, 0, pixmap)
                 painter.end()
 
-                self.userImageLabel.setPixmap(circular_pixmap)
-                self.userImageLabel.setVisible(True)
+                self.ui.userImageLabel.setPixmap(circular_pixmap)
+                self.ui.userImageLabel.setVisible(True)
             except Exception as e:
                 print(f"Erro ao carregar a imagem do usuário: {e}")
         else:
-            self.userImageLabel.setVisible(False)
+            self.ui.userImageLabel.setVisible(False)
 
     def toggle_scrobble_mode(self):
-        self.scrobble_by_album = self.modeToggle.isChecked()
+        self.scrobble_by_album = self.ui.modeToggle.isChecked()
         if self.scrobble_by_album:
-            self.modeToggle.setText("Scrobble por Faixa")
+            self.ui.modeToggle.setText("Scrobble por Faixa")
+            self.ui.songLabel.setText("Álbum")
         else:
-            self.modeToggle.setText("Scrobble por Álbum")
+            self.ui.modeToggle.setText("Scrobble por Álbum")
+            self.ui.songLabel.setText("Música")
         self.update_interface()
 
     def update_interface(self):
         if self.is_authenticated:
-            self.setFixedSize(300, 230)
-            self.usernameLabel.setVisible(False)
-            self.usernameInput.setVisible(False)
-            self.passwordLabel.setVisible(False)
-            self.passwordInput.setVisible(False)
-            self.loginButton.setVisible(False)
-            self.modeToggle.setEnabled(True)
-            self.userImageLabel.setVisible(True)
+            self.setFixedSize(300, 400)  # Ajuste o tamanho conforme necessário
+            self.ui.usernameLabel.setVisible(False)
+            self.ui.usernameInput.setVisible(False)
+            self.ui.passwordLabel.setVisible(False)
+            self.ui.passwordInput.setVisible(False)
+            self.ui.apiKeyLabel.setVisible(False)
+            self.ui.apiKeyInput.setVisible(False)
+            self.ui.apiSecretLabel.setVisible(False)
+            self.ui.apiSecretInput.setVisible(False)
+            self.ui.apiLinkLabel.setVisible(False)
+            self.ui.loginButton.setVisible(False)
+            self.ui.modeToggle.setEnabled(True)
+            self.ui.userImageLabel.setVisible(True)
+
+            self.ui.artistInput.setEnabled(True)
+            self.ui.songInput.setEnabled(True)
+            self.ui.quantityInput.setEnabled(True)
+            self.ui.scrobbleButton.setEnabled(True)
         else:
-            self.setFixedSize(300, 320)
-            self.usernameLabel.setVisible(True)
-            self.usernameInput.setVisible(True)
-            self.passwordLabel.setVisible(True)
-            self.passwordInput.setVisible(True)
-            self.loginButton.setVisible(True)
-            self.modeToggle.setEnabled(False)
-            self.userImageLabel.setVisible(False)
+            self.setFixedSize(300, 500)  # Ajuste no tamanho para acomodar os campos de login
+            self.ui.usernameLabel.setVisible(True)
+            self.ui.usernameInput.setVisible(True)
+            self.ui.passwordLabel.setVisible(True)
+            self.ui.passwordInput.setVisible(True)
+            self.ui.apiKeyLabel.setVisible(True)
+            self.ui.apiKeyInput.setVisible(True)
+            self.ui.apiSecretLabel.setVisible(True)
+            self.ui.apiSecretInput.setVisible(True)
+            self.ui.apiLinkLabel.setVisible(True)
+            self.ui.loginButton.setVisible(True)
+            self.ui.modeToggle.setEnabled(False)
+            self.ui.userImageLabel.setVisible(False)
 
-        if self.scrobble_by_album:
-            self.songLabel.setVisible(False)
-            self.songInput.setVisible(False)
-            self.artistLabel.setText("Artista")
-            self.songInput.setText("")
-            self.songInput.setEnabled(False)
-
-            if not hasattr(self, 'albumLabel'):
-                self.albumLabel = QtWidgets.QLabel("Álbum")
-                self.albumInput = QtWidgets.QLineEdit()
-                self.albumInput.setPlaceholderText("Coloque aqui o nome do album")  # Texto de exemplo
-
-                album_layout = QtWidgets.QHBoxLayout()
-                album_layout.setSpacing(5)
-                album_layout.addWidget(self.albumLabel)
-                album_layout.addWidget(self.albumInput)
-                self.main_layout.insertLayout(5, album_layout)
-            else:
-                self.albumLabel.setVisible(True)
-                self.albumInput.setVisible(True)
-
-            self.artistInput.setEnabled(self.is_authenticated)
-            self.albumInput.setEnabled(self.is_authenticated)
-            self.quantityInput.setEnabled(self.is_authenticated)
-            self.scrobbleButton.setEnabled(self.is_authenticated)
-        else:
-            self.songLabel.setVisible(True)
-            self.songInput.setVisible(True)
-            self.artistLabel.setText("Artista")
-            self.songInput.setEnabled(self.is_authenticated)
-
-            if hasattr(self, 'albumLabel'):
-                self.albumLabel.setVisible(False)
-                self.albumInput.setVisible(False)
-
-            self.artistInput.setEnabled(self.is_authenticated)
-            self.songInput.setEnabled(self.is_authenticated)
-            self.quantityInput.setEnabled(self.is_authenticated)
-            self.scrobbleButton.setEnabled(self.is_authenticated)
+            self.ui.artistInput.setEnabled(False)
+            self.ui.songInput.setEnabled(False)
+            self.ui.quantityInput.setEnabled(False)
+            self.ui.scrobbleButton.setEnabled(False)
 
     def autenticar_usuario(self):
-        username = self.usernameInput.text()
-        password = self.passwordInput.text()
+        username = self.ui.usernameInput.text()
+        password = self.ui.passwordInput.text()
+        api_key = self.ui.apiKeyInput.text()
+        api_secret = self.ui.apiSecretInput.text()
 
-        if not username or not password:
-            self.statusLabel.setText("Por favor, preencha os campos de usuário e senha.")
+        if not username or not password or not api_key or not api_secret:
+            self.ui.statusLabel.setText("Por favor, preencha todos os campos de login e API.")
             return
 
         password_hash = pylast.md5(password)
-        self.network = autenticar(username, password_hash)
+        self.network = self.autenticar(username, password_hash, api_key, api_secret)
 
         if self.network:
             self.is_authenticated = True
-            self.statusLabel.setText("<b>Autenticado com sucesso!</b>")
-            self.loginButton.setEnabled(False)
-            save_credentials(username, password_hash)
+            self.ui.statusLabel.setText("<b>Autenticado com sucesso!</b>")
+            self.ui.loginButton.setEnabled(False)
+            save_credentials(username, password_hash, api_key, api_secret)
             self.load_user_image()
             self.update_interface()
         else:
-            self.statusLabel.setText("<b>Falha na autenticação. Verifique suas credenciais.</b>")
+            self.ui.statusLabel.setText("<b>Falha na autenticação. Verifique suas credenciais.</b>")
             self.is_authenticated = False
 
     def iniciar_scrobble(self):
         if not self.network:
-            self.statusLabel.setText("Autentique-se primeiro.")
+            self.ui.statusLabel.setText("Autentique-se primeiro.")
             return
 
-        artista = self.artistInput.text().strip()
+        artista = self.ui.artistInput.text().strip()
+        musica_album = self.ui.songInput.text().strip()
 
         try:
-            quantidade = int(self.quantityInput.text())
+            quantidade = int(self.ui.quantityInput.text())
         except ValueError:
-            self.statusLabel.setText("A quantidade precisa ser um número.")
+            self.ui.statusLabel.setText("A quantidade precisa ser um número.")
             return
 
         if quantidade <= 0:
-            self.statusLabel.setText("A quantidade precisa ser maior que zero.")
+            self.ui.statusLabel.setText("A quantidade precisa ser maior que zero.")
             return
 
         if quantidade > SCROBBLE_LIMIT:
-            self.statusLabel.setText(f"A quantidade não pode exceder {SCROBBLE_LIMIT} scrobbles por dia.")
+            self.ui.statusLabel.setText(f"A quantidade não pode exceder {SCROBBLE_LIMIT} scrobbles por dia.")
             return
 
         if self.scrobble_by_album:
-            album = self.albumInput.text().strip()
+            album = musica_album
             if not artista or not album:
-                self.statusLabel.setText("Por favor, preencha os campos de artista e álbum.")
+                self.ui.statusLabel.setText("Por favor, preencha os campos de artista e álbum.")
                 return
 
-            try:
-                album_obj = self.network.get_album(artista, album)
-                tracks = album_obj.get_tracks()
-                if not tracks:
-                    self.statusLabel.setText("Álbum não encontrado ou sem faixas disponíveis.")
-                    return
-            except pylast.WSError as e:
-                self.statusLabel.setText(f"Erro ao obter o álbum: {e}")
-                return
-
-            self.scrobbleButton.setEnabled(False)
-            self.pauseButton.setVisible(True)
-            self.cancelButton.setVisible(True)
+            self.ui.scrobbleButton.setEnabled(False)
+            self.ui.pauseButton.setVisible(True)
+            self.ui.cancelButton.setVisible(True)
 
             self.thread = ScrobbleThreadAlbum(self.network, artista, album, quantidade)
         else:
-            musica = self.songInput.text().strip()
+            musica = musica_album
             if not artista or not musica:
-                self.statusLabel.setText("Por favor, preencha os campos de artista e música.")
+                self.ui.statusLabel.setText("Por favor, preencha os campos de artista e música.")
                 return
 
-            if not verificar_artista_musica(self.network, artista, musica):
-                self.statusLabel.setText("Artista ou música não encontrados. Verifique as entradas.")
-                return
-
-            self.scrobbleButton.setEnabled(False)
-            self.pauseButton.setVisible(True)
-            self.cancelButton.setVisible(True)
+            self.ui.scrobbleButton.setEnabled(False)
+            self.ui.pauseButton.setVisible(True)
+            self.ui.cancelButton.setVisible(True)
 
             self.thread = ScrobbleThread(self.network, artista, musica, quantidade)
 
@@ -260,34 +263,51 @@ class ScrobblerApp(QtWidgets.QMainWindow, Ui_MainWindow):
     def pausar_ou_resumir_scrobble(self):
         if self.thread.paused:
             self.thread.resume()
-            self.pauseButton.setText("Pausar")
+            self.ui.pauseButton.setText("Pausar")
         else:
             self.thread.pause()
-            self.pauseButton.setText("Retomar")
+            self.ui.pauseButton.setText("Retomar")
 
     def cancelar_scrobble(self):
         self.thread.stop()
         self.resetar_campos()
 
     def atualizar_progresso(self, progresso, mensagem):
-        self.progressBar.setValue(progresso)
-        self.statusLabel.setText(f"<b>{mensagem}</b>")
+        self.ui.progressBar.setValue(progresso)
+        self.ui.statusLabel.setText(f"<b>{mensagem}</b>")
 
     def finalizar_scrobble(self, mensagem):
-        self.scrobbleButton.setEnabled(True)
-        self.pauseButton.setVisible(False)
-        self.cancelButton.setVisible(False)
-        self.statusLabel.setText(mensagem)
-        self.progressBar.setValue(100)
+        self.ui.scrobbleButton.setEnabled(True)
+        self.ui.pauseButton.setVisible(False)
+        self.ui.cancelButton.setVisible(False)
+        self.ui.statusLabel.setText(mensagem)
+        self.ui.progressBar.setValue(0)
 
     def resetar_campos(self):
-        self.artistInput.setText("")
-        self.songInput.setText("")
-        if hasattr(self, 'albumInput'):
-            self.albumInput.setText("")
-        self.quantityInput.setText("")
-        self.statusLabel.setText("Vai scrobblar hoje, chefe?")
-        self.pauseButton.setVisible(False)
-        self.cancelButton.setVisible(False)
-        self.scrobbleButton.setEnabled(True)
-        self.progressBar.setValue(0)
+        self.ui.artistInput.setText("")
+        self.ui.songInput.setText("")
+        self.ui.quantityInput.setText("")
+        self.ui.statusLabel.setText("Vai scrobblar hoje, chefe?")
+        self.ui.pauseButton.setVisible(False)
+        self.ui.cancelButton.setVisible(False)
+        self.ui.scrobbleButton.setEnabled(True)
+        self.ui.progressBar.setValue(0)
+
+    def check_for_updates(self):
+        has_update, latest_version = check_for_updates()
+        if has_update:
+            reply = QtWidgets.QMessageBox.question(
+                self,
+                "Atualização Disponível",
+                f"Uma nova versão ({latest_version}) está disponível. Deseja atualizar agora?",
+                QtWidgets.QMessageBox.Yes | QtWidgets.QMessageBox.No
+            )
+            if reply == QtWidgets.QMessageBox.Yes:
+                update_application()
+                QtWidgets.QMessageBox.information(
+                    self,
+                    "Atualização Concluída",
+                    "O aplicativo será reiniciado para concluir a atualização."
+                )
+                QtCore.QCoreApplication.quit()
+                QtCore.QProcess.startDetached(sys.executable, sys.argv)
