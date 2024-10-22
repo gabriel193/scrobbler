@@ -1,54 +1,35 @@
 # utils.py
 
-import pylast
-import configparser
 import os
+import sys
+import subprocess
+import requests
 
-API_KEY = ""
-API_SECRET = ""
-SCROBBLE_LIMIT = 3000
+GITHUB_REPO = "gabriel193/scrobbler"
 
-def autenticar(username: str, password_hash: str):
+def check_for_updates():
+    current_version = get_current_version()
+    latest_version = get_latest_version()
+    if latest_version and latest_version != current_version:
+        return True, latest_version
+    return False, None
+
+def get_current_version():
+    return "v1.0.0"
+
+def get_latest_version():
+    url = f"https://api.github.com/repos/{GITHUB_REPO}/releases/latest"
     try:
-        network = pylast.LastFMNetwork(
-            api_key=API_KEY,
-            api_secret=API_SECRET,
-            username=username,
-            password_hash=password_hash
-        )
-        network.get_authenticated_user()
-        return network
-    except pylast.WSError as e:
-        print(f"Erro de autenticação: {e}")
-        return None
+        response = requests.get(url)
+        if response.status_code == 200:
+            latest_release = response.json()
+            return latest_release["tag_name"]
+    except Exception as e:
+        print(f"Erro ao verificar atualizações: {e}")
+    return None
 
-def verificar_artista_musica(network, artista: str, musica: str) -> bool:
-    try:
-        track = network.get_track(artista, musica)
-        return track is not None
-    except pylast.WSError as e:
-        print(f"Erro ao verificar artista ou música: {e}")
-        return False
-
-def save_credentials(username, password_hash):
-    config = configparser.ConfigParser()
-    config['Credentials'] = {
-        'username': username,
-        'password_hash': password_hash
-    }
-    with open('credentials.ini', 'w') as configfile:
-        config.write(configfile)
-
-def load_credentials():
-    config = configparser.ConfigParser()
-    if os.path.exists('credentials.ini'):
-        config.read('credentials.ini')
-        if 'Credentials' in config:
-            username = config['Credentials'].get('username')
-            password_hash = config['Credentials'].get('password_hash')
-            return username, password_hash
-    return None, None
-
-def remove_credentials():
-    if os.path.exists('credentials.ini'):
-        os.remove('credentials.ini')
+def update_application():
+    if os.path.exists(".git"):
+        subprocess.run(["git", "pull"])
+    else:
+        subprocess.run(["git", "clone", f"https://github.com/{GITHUB_REPO}.git", "."])
