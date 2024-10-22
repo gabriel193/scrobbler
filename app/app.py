@@ -82,6 +82,7 @@ class ScrobblerApp(QtWidgets.QMainWindow):
                 # Baixar a atualização em um thread separado
                 self.update_downloader = UpdateDownloader()
                 self.update_downloader.download_complete.connect(self.on_update_complete)
+                self.update_downloader.download_failed.connect(self.on_update_failed)
                 self.update_downloader.start()
 
     def on_update_complete(self):
@@ -93,6 +94,14 @@ class ScrobblerApp(QtWidgets.QMainWindow):
         # Reiniciar o aplicativo com o novo executável
         QtCore.QCoreApplication.quit()
         QtCore.QProcess.startDetached(sys.executable, sys.argv)
+
+    def on_update_failed(self, message):
+        QtWidgets.QMessageBox.critical(
+            self,
+            "Erro de Atualização",
+            message
+        )
+        self.ui.statusLabel.setText("Erro ao baixar a atualização. Tente novamente mais tarde.")
 
     def load_credentials(self):
         credentials = load_credentials()
