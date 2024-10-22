@@ -9,3 +9,4 @@ dist
 .gitignore
 gitignore
 .vscode
+__init__.py
