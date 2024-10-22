@@ -1,7 +1,7 @@
 # updates.py
 
 from PyQt5.QtCore import QThread, pyqtSignal
-from utils import check_for_updates, update_application
+from utils.utils import check_for_updates, update_application
 
 class UpdateChecker(QThread):
     update_found = pyqtSignal(bool, str)
