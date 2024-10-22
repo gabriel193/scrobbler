@@ -20,7 +20,7 @@ def check_for_updates():
     return False, None
 
 def get_current_version():
-    return "v1.3.0"
+    return "v1.4.0"
 
 def get_latest_version():
     url = f"https://api.github.com/repos/{GITHUB_REPO}/releases/latest"
