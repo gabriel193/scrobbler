@@ -12,7 +12,11 @@ class UpdateChecker(QThread):
 
 class UpdateDownloader(QThread):
     download_complete = pyqtSignal()
+    download_failed = pyqtSignal(str)  # Sinal para falha no download
 
     def run(self):
-        update_application()
-        self.download_complete.emit()
+        success = update_application()
+        if success:
+            self.download_complete.emit()
+        else:
+            self.download_failed.emit("Erro ao baixar a atualização. Por favor, tente novamente mais tarde.")
