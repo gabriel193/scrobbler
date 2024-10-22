@@ -7,6 +7,7 @@ import pylast
 from PyQt5 import QtWidgets, QtGui, QtCore
 from ui.scrobbler_ui import Ui_MainWindow
 from PyQt5.QtGui import QPixmap, QPainter, QPainterPath
+from PyQt5.QtCore import QThread, pyqtSignal
 import urllib.request
 
 from utils import (
@@ -20,11 +21,32 @@ from utils import (
 
 from threads import ScrobbleThread, ScrobbleThreadAlbum
 
+class UpdateChecker(QThread):
+    update_found = pyqtSignal(bool, str)
+
+    def run(self):
+        has_update, latest_version = check_for_updates()
+        self.update_found.emit(has_update, latest_version)
+
+class UpdateDownloader(QThread):
+    download_complete = pyqtSignal()
+
+    def run(self):
+        update_application()  # Executa o processo de download e substituição
+        self.download_complete.emit()
+
 class ScrobblerApp(QtWidgets.QMainWindow):
     def __init__(self):
         super().__init__()
         self.ui = Ui_MainWindow()
         self.ui.setupUi(self)
+
+        # Inicializar as verificações de atualização
+        self.update_checker = UpdateChecker()
+        self.update_checker.update_found.connect(self.handle_update_check)
+        
+        # Verificar atualizações em segundo plano
+        self.update_checker.start()
 
         # Obter o caminho base
         if getattr(sys, 'frozen', False):
@@ -59,8 +81,31 @@ class ScrobblerApp(QtWidgets.QMainWindow):
         # Atualiza a interface
         self.update_interface()
 
-        # Verificar atualizações em segundo plano
-        threading.Thread(target=self.check_for_updates, daemon=True).start()
+    def handle_update_check(self, has_update, latest_version):
+        if has_update:
+            reply = QtWidgets.QMessageBox.question(
+                self,
+                "Atualização Disponível",
+                f"Uma nova versão ({latest_version}) está disponível. Deseja atualizar agora?",
+                QtWidgets.QMessageBox.Yes | QtWidgets.QMessageBox.No
+            )
+            if reply == QtWidgets.QMessageBox.Yes:
+                self.ui.statusLabel.setText("Baixando atualização...")
+
+                # Baixar a atualização em um thread separado
+                self.update_downloader = UpdateDownloader()
+                self.update_downloader.download_complete.connect(self.on_update_complete)
+                self.update_downloader.start()
+
+    def on_update_complete(self):
+        QtWidgets.QMessageBox.information(
+            self,
+            "Atualização Concluída",
+            "O aplicativo será reiniciado para concluir a atualização."
+        )
+        # Reiniciar o aplicativo com o novo executável
+        QtCore.QCoreApplication.quit()
+        QtCore.QProcess.startDetached(sys.executable, sys.argv)
 
     def load_credentials(self):
         credentials = load_credentials()
