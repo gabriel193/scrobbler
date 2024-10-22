@@ -1,4 +1,5 @@
 ./dist
 ./build
+./ui/__pycache__
 credentials.json
 __pycache__
