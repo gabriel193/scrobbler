@@ -38,27 +38,35 @@ def update_application():
 
     if not latest_release:
         print("Erro ao obter informações da última release.")
-        return
+        return False
 
     # Pegue o link do executável da última release
     exe_url = None
-    for asset in latest_release["assets"]:
+    for asset in latest_release.get("assets", []):
         if asset["name"] == "Scrobbler.exe":  # Nome do executável
             exe_url = asset["browser_download_url"]
             break
 
     if exe_url is None:
         print("Não foi possível encontrar o executável na última release.")
-        return
+        return False
 
     # Baixar o novo executável
     print("Baixando o novo executável...")
-    new_exe_path = "Scrobbler_new.exe"
-    with requests.get(exe_url, stream=True) as r:
-        with open(new_exe_path, 'wb') as f:
-            shutil.copyfileobj(r.raw, f)
 
-    print("Download concluído. Preparando para atualizar...")
+    new_exe_path = "Scrobbler_new.exe"
+    try:
+        with requests.get(exe_url, stream=True) as r:
+            r.raise_for_status()  # Levantar um erro em caso de falha na requisição
+            with open(new_exe_path, 'wb') as f:
+                shutil.copyfileobj(r.raw, f)
+        print("Download concluído. Preparando para atualizar...")
+    except requests.RequestException as e:
+        print(f"Erro durante o download: {e}")
+        return False
+    except Exception as e:
+        print(f"Ocorreu um erro ao salvar o arquivo: {e}")
+        return False
 
     # Criar script temporário para substituir o executável após o fechamento
     temp_script = "update_temp.bat"
@@ -72,12 +80,14 @@ def update_application():
         del "{old_exe_path}"
         move "Scrobbler_new.exe" "{old_exe_path}"
         start "" "{old_exe_path}"
-        del "%~f0"
+        del "%~f0"  # Exclui o script temporário
         ''')
 
     # Fechar o aplicativo atual e executar o script de atualização
     subprocess.Popen([temp_script], shell=True)
     QtCore.QCoreApplication.quit()
+
+    return True
 
 def get_latest_release_info():
     url = f"https://api.github.com/repos/{GITHUB_REPO}/releases/latest"
