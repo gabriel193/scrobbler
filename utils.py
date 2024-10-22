@@ -4,8 +4,8 @@ import pylast
 import configparser
 import os
 
-API_KEY = "346d6e99df9e297133ab68c615af92a0"
-API_SECRET = "afeb02609e14033a93ad833d5fe4fc0b"
+API_KEY = ""
+API_SECRET = ""
 SCROBBLE_LIMIT = 3000
 
 def autenticar(username: str, password_hash: str):
