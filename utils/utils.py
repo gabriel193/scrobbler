@@ -1,10 +1,11 @@
+# utils.py
+
 import json
 import os
 import shutil
 import sys
 import subprocess
 import requests
-import time
 from PyQt5 import QtCore
 
 CREDENTIALS_FILE = "credentials.json"
@@ -71,7 +72,7 @@ def update_application():
         del "{old_exe_path}"
         move "Scrobbler_new.exe" "{old_exe_path}"
         start "" "{old_exe_path}"
-        del "%~f0"  # Exclui o script temporário
+        del "%~f0"
         ''')
 
     # Fechar o aplicativo atual e executar o script de atualização

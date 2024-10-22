@@ -2,7 +2,7 @@
 
 import sys
 from PyQt5 import QtWidgets
-from app import ScrobblerApp
+from app.app import ScrobblerApp
 
 def main():
     app = QtWidgets.QApplication(sys.argv)

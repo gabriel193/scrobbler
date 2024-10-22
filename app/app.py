@@ -2,12 +2,10 @@
 
 import sys
 import os
-import threading
 import pylast
 from PyQt5 import QtWidgets, QtGui, QtCore
 from ui.scrobbler_ui import Ui_MainWindow
 from PyQt5.QtGui import QPixmap, QPainter, QPainterPath
-from PyQt5.QtCore import QThread, pyqtSignal
 import urllib.request
 
 from utils import (
@@ -15,25 +13,11 @@ from utils import (
     load_credentials,
     remove_credentials,
     SCROBBLE_LIMIT,
-    check_for_updates,
-    update_application,
 )
 
-from threads import ScrobbleThread, ScrobbleThreadAlbum
-
-class UpdateChecker(QThread):
-    update_found = pyqtSignal(bool, str)
-
-    def run(self):
-        has_update, latest_version = check_for_updates()
-        self.update_found.emit(has_update, latest_version)
-
-class UpdateDownloader(QThread):
-    download_complete = pyqtSignal()
-
-    def run(self):
-        update_application()  # Executa o processo de download e substituição
-        self.download_complete.emit()
+from threads.threads import ScrobbleThread, ScrobbleThreadAlbum
+from services.services import LastFMService
+from app.updates import UpdateChecker, UpdateDownloader
 
 class ScrobblerApp(QtWidgets.QMainWindow):
     def __init__(self):
@@ -56,6 +40,9 @@ class ScrobblerApp(QtWidgets.QMainWindow):
         icon_path = os.path.join(base_path, "resources", "app.ico")
         self.setWindowIcon(QtGui.QIcon(icon_path))
         self.setFixedSize(300, 500)  # Ajuste no tamanho para acomodar os novos campos
+
+        # Inicializa o serviço LastFM
+        self.lastfm_service = LastFMService()
         self.network = None
         self.is_authenticated = False
 
@@ -120,8 +107,9 @@ class ScrobblerApp(QtWidgets.QMainWindow):
             self.ui.apiKeyInput.setText(api_key)
             self.ui.apiSecretInput.setText(api_secret)
 
-            self.network = self.autenticar(username, password_hash, api_key, api_secret)
-            if self.network:
+            success = self.lastfm_service.authenticate_with_password_hash(username, password_hash, api_key, api_secret)
+            if success:
+                self.network = self.lastfm_service.network
                 self.is_authenticated = True
                 self.ui.statusLabel.setText(f"<b>Vai scrobblar hoje, chefe?</b>")
                 self.ui.loginButton.setEnabled(False)
@@ -134,26 +122,31 @@ class ScrobblerApp(QtWidgets.QMainWindow):
         else:
             self.ui.statusLabel.setText("Por favor, faça login.")
 
-    def autenticar(self, username, password_hash, api_key, api_secret):
-        try:
-            network = pylast.LastFMNetwork(
-                api_key=api_key,
-                api_secret=api_secret,
-                username=username,
-                password_hash=password_hash
-            )
-            # Verificar se o login foi bem-sucedido
-            user = network.get_authenticated_user()
-            return network
-        except pylast.WSError as e:
-            self.ui.statusLabel.setText(f"Erro de autenticação: {e}")
-            return None
-        except Exception as e:
-            self.ui.statusLabel.setText(f"Ocorreu um erro: {e}")
-            return None
+    def autenticar_usuario(self):
+        username = self.ui.usernameInput.text()
+        password = self.ui.passwordInput.text()
+        api_key = self.ui.apiKeyInput.text()
+        api_secret = self.ui.apiSecretInput.text()
+
+        if not username or not password or not api_key or not api_secret:
+            self.ui.statusLabel.setText("Por favor, preencha todos os campos de login e API.")
+            return
+
+        success = self.lastfm_service.authenticate(username, password, api_key, api_secret)
+        if success:
+            self.network = self.lastfm_service.network
+            self.is_authenticated = True
+            self.ui.statusLabel.setText("<b>Autenticado com sucesso!</b>")
+            self.ui.loginButton.setEnabled(False)
+            save_credentials(username, self.lastfm_service.password_hash, api_key, api_secret)
+            self.load_user_image()
+            self.update_interface()
+        else:
+            self.ui.statusLabel.setText("<b>Falha na autenticação. Verifique suas credenciais.</b>")
+            self.is_authenticated = False
 
     def load_user_image(self):
-        user = self.network.get_authenticated_user()
+        user = self.lastfm_service.network.get_authenticated_user()
         image_url = user.get_image()
         if image_url:
             try:
@@ -232,32 +225,8 @@ class ScrobblerApp(QtWidgets.QMainWindow):
             self.ui.quantityInput.setEnabled(False)
             self.ui.scrobbleButton.setEnabled(False)
 
-    def autenticar_usuario(self):
-        username = self.ui.usernameInput.text()
-        password = self.ui.passwordInput.text()
-        api_key = self.ui.apiKeyInput.text()
-        api_secret = self.ui.apiSecretInput.text()
-
-        if not username or not password or not api_key or not api_secret:
-            self.ui.statusLabel.setText("Por favor, preencha todos os campos de login e API.")
-            return
-
-        password_hash = pylast.md5(password)
-        self.network = self.autenticar(username, password_hash, api_key, api_secret)
-
-        if self.network:
-            self.is_authenticated = True
-            self.ui.statusLabel.setText("<b>Autenticado com sucesso!</b>")
-            self.ui.loginButton.setEnabled(False)
-            save_credentials(username, password_hash, api_key, api_secret)
-            self.load_user_image()
-            self.update_interface()
-        else:
-            self.ui.statusLabel.setText("<b>Falha na autenticação. Verifique suas credenciais.</b>")
-            self.is_authenticated = False
-
     def iniciar_scrobble(self):
-        if not self.network:
+        if not self.lastfm_service.network:
             self.ui.statusLabel.setText("Autentique-se primeiro.")
             return
 
@@ -288,7 +257,7 @@ class ScrobblerApp(QtWidgets.QMainWindow):
             self.ui.pauseButton.setVisible(True)
             self.ui.cancelButton.setVisible(True)
 
-            self.thread = ScrobbleThreadAlbum(self.network, artista, album, quantidade)
+            self.thread = ScrobbleThreadAlbum(self.lastfm_service.network, artista, album, quantidade)
         else:
             musica = musica_album
             if not artista or not musica:
@@ -299,7 +268,7 @@ class ScrobblerApp(QtWidgets.QMainWindow):
             self.ui.pauseButton.setVisible(True)
             self.ui.cancelButton.setVisible(True)
 
-            self.thread = ScrobbleThread(self.network, artista, musica, quantidade)
+            self.thread = ScrobbleThread(self.lastfm_service.network, artista, musica, quantidade)
 
         self.thread.progress.connect(self.atualizar_progresso)
         self.thread.finished.connect(self.finalizar_scrobble)
@@ -337,22 +306,3 @@ class ScrobblerApp(QtWidgets.QMainWindow):
         self.ui.cancelButton.setVisible(False)
         self.ui.scrobbleButton.setEnabled(True)
         self.ui.progressBar.setValue(0)
-
-    def check_for_updates(self):
-        has_update, latest_version = check_for_updates()
-        if has_update:
-            reply = QtWidgets.QMessageBox.question(
-                self,
-                "Atualização Disponível",
-                f"Uma nova versão ({latest_version}) está disponível. Deseja atualizar agora?",
-                QtWidgets.QMessageBox.Yes | QtWidgets.QMessageBox.No
-            )
-            if reply == QtWidgets.QMessageBox.Yes:
-                update_application()
-                QtWidgets.QMessageBox.information(
-                    self,
-                    "Atualização Concluída",
-                    "O aplicativo será reiniciado para concluir a atualização."
-                )
-                QtCore.QCoreApplication.quit()
-                QtCore.QProcess.startDetached(sys.executable, sys.argv)
